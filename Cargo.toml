@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+netcdf-sys = "0.9"
+netcdf = "0.12.0"
+libc = "0.2"
 rocket = "0.5.1"
 
+[patch.crates-io]
+netcdf = { path = "vendor/netcdf" }

@@ -1,0 +1,43 @@
+[package]
+name = "netcdf"
+version = "0.12.0"
+authors = [
+    "Michael Hiley <mhiley@gmail.com>",
+    "Magnus Ulimoen <magnusu@met.no>"
+]
+license = "MIT OR Apache-2.0"
+description = "High-level NetCDF bindings for Rust"
+repository = "https://github.com/georust/netcdf"
+keywords = ["netcdf", "hdf", "hdf5", "libnetcdf", "netcdf4"]
+edition = "2021"
+readme = "../README.md"
+categories = ["science", "filesystem"]
+exclude = ["examples/**", "tests/**"]
+build = "build.rs"
+rust-version = "1.77.0"
+
+[features]
+default = ["ndarray"]
+static = ["netcdf-sys/static"]
+derive = ["dep:netcdf-derive"]
+mpi = ["dep:mpi-sys", "netcdf-sys/mpi"]
+ndarray = ["dep:ndarray"]
+
+[dependencies]
+ndarray = { version = ">=0.15,<=0.17", optional = true }
+netcdf-sys = { workspace = true }
+netcdf-derive = { workspace = true, optional = true }
+bitflags = "2.4.2"
+libc = "0.2.155"
+mpi-sys = { workspace = true, optional = true }
+
+[dev-dependencies]
+clap = { version = "4.5.1", features = ["derive"] }
+tempfile = "3.1.0"
+
+[build-dependencies]
+semver = "1.0.23"
+
+[package.metadata.docs.rs]
+features = ["static"]
+rustdoc-args = ["--cfg", "docsrs"]
