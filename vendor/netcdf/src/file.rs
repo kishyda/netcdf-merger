@@ -165,7 +165,7 @@ impl RawFile {
         let name = std::ffi::CString::new("inmemory.nc").unwrap();
         let mut ncid: nc_type = -1;
         checked_with_lock(|| unsafe {
-            nc_create_mem(name.as_ptr(), 0, initial_size, &mut ncid)
+            nc_create_mem(name.as_ptr(), NC_NETCDF4, initial_size, &mut ncid)
         })?;
 
         Ok(FileMut(File(Self { ncid })))

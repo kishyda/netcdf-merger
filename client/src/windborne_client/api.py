@@ -7,7 +7,7 @@ from urllib.request import Request, urlopen
 
 from netCDF4 import Dataset
 
-from .samples import create_part_a_netcdf_bytes, create_part_b_netcdf_bytes
+from .samples import create_netcdf_bytes_for_endpoint
 
 
 @dataclasses.dataclass(frozen=True)
@@ -28,28 +28,41 @@ class WindborneClient:
     def __init__(self, base_url: str = "http://127.0.0.1:8000") -> None:
         self.base_url = base_url.rstrip("/")
 
-    def read(self, name: str) -> Dataset:
+    def read_response(self, name: str) -> ApiResponse:
         query = urlencode({"name": name})
-        response = self._request("GET", f"/read?{query}")
-        return self._dataset_from_response(response)
+        return self._request("GET", f"/read?{query}")
+
+    def read(self, name: str) -> Dataset:
+        return self._dataset_from_response(self.read_response(name))
+
+    def upload(
+        self,
+        endpoint: str,
+        name: str,
+        dataset_name: str,
+        netcdf_bytes: bytes | None = None,
+    ) -> ApiResponse:
+        normalized_endpoint = endpoint.strip().lstrip("/")
+        query = urlencode({"name": name})
+        if netcdf_bytes is None:
+            request_body = create_netcdf_bytes_for_endpoint(
+                normalized_endpoint,
+                dataset_name,
+            )
+        else:
+            request_body = netcdf_bytes
+        return self._request(
+            "POST",
+            f"/{normalized_endpoint}?{query}",
+            data=request_body,
+            headers={"Content-Type": "application/netcdf"},
+        )
 
     def part_a(self, name: str, dataset_name: str) -> ApiResponse:
-        query = urlencode({"name": name})
-        return self._request(
-            "POST",
-            f"/part_a?{query}",
-            data=create_part_a_netcdf_bytes(dataset_name),
-            headers={"Content-Type": "application/netcdf"},
-        )
+        return self.upload("part_a", name=name, dataset_name=dataset_name)
 
     def part_b(self, name: str, dataset_name: str) -> ApiResponse:
-        query = urlencode({"name": name})
-        return self._request(
-            "POST",
-            f"/part_b?{query}",
-            data=create_part_b_netcdf_bytes(dataset_name),
-            headers={"Content-Type": "application/netcdf"},
-        )
+        return self.upload("part_b", name=name, dataset_name=dataset_name)
 
     def _request(
         self,

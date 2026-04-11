@@ -54,12 +54,49 @@ async fn part_a_rejects_blank_name() {
 }
 
 #[rocket::async_test]
+async fn part_a_rejects_invalid_netcdf_body() {
+    let client = build_client().await;
+
+    let response = client
+        .post("/part_a?name=invalid")
+        .header(ContentType::new("application", "netcdf"))
+        .body(b"not a netcdf file".to_vec())
+        .dispatch()
+        .await;
+
+    assert_eq!(response.status(), Status::BadRequest);
+}
+
+#[rocket::async_test]
+async fn part_b_rejects_invalid_netcdf_body() {
+    let client = build_client().await;
+
+    let response = client
+        .post("/part_b?name=invalid")
+        .header(ContentType::new("application", "netcdf"))
+        .body(b"not a netcdf file".to_vec())
+        .dispatch()
+        .await;
+
+    assert_eq!(response.status(), Status::BadRequest);
+}
+
+#[rocket::async_test]
 async fn read_returns_not_found_when_no_parts_exist() {
     let client = build_client().await;
 
     let response = client.get("/read?name=missing").dispatch().await;
 
     assert_eq!(response.status(), Status::NotFound);
+}
+
+#[rocket::async_test]
+async fn read_rejects_blank_name() {
+    let client = build_client().await;
+
+    let response = client.get("/read?name=%20%20%20").dispatch().await;
+
+    assert_eq!(response.status(), Status::BadRequest);
 }
 
 #[rocket::async_test]
@@ -131,4 +168,125 @@ async fn full_upload_flow_returns_merged_netcdf() {
     assert!(file.variable("humidity").is_some());
     assert!(file.attribute("max_temp").is_some());
     assert!(file.attribute("avg_humidity").is_some());
+}
+
+#[rocket::async_test]
+async fn read_recomputes_after_upload_invalidates_cached_merge() {
+    let client = build_client().await;
+
+    let first_part_a = client
+        .post("/part_a?name=cached-merge")
+        .header(ContentType::new("application", "netcdf"))
+        .body(create_part_bytes(
+            "part-a",
+            "max_temp",
+            "310K",
+            "temperature",
+            &[1.0, 2.0, 3.0, 4.0],
+        ))
+        .dispatch()
+        .await;
+    assert_eq!(first_part_a.status(), Status::Ok);
+
+    let first_part_b = client
+        .post("/part_b?name=cached-merge")
+        .header(ContentType::new("application", "netcdf"))
+        .body(create_part_bytes(
+            "part-b",
+            "avg_humidity",
+            "65%",
+            "humidity",
+            &[10.0, 20.0, 30.0, 40.0],
+        ))
+        .dispatch()
+        .await;
+    assert_eq!(first_part_b.status(), Status::Ok);
+
+    let first_read = client.get("/read?name=cached-merge").dispatch().await;
+    assert_eq!(first_read.status(), Status::Ok);
+
+    let updated_part_b = client
+        .post("/part_b?name=cached-merge")
+        .header(ContentType::new("application", "netcdf"))
+        .body(create_part_bytes(
+            "part-b-updated",
+            "avg_humidity",
+            "72%",
+            "humidity",
+            &[100.0, 200.0, 300.0, 400.0],
+        ))
+        .dispatch()
+        .await;
+    assert_eq!(updated_part_b.status(), Status::Ok);
+
+    let second_read = client.get("/read?name=cached-merge").dispatch().await;
+    assert_eq!(second_read.status(), Status::Ok);
+
+    let bytes = second_read.into_bytes().await.expect("response bytes");
+    let file = netcdf::open_mem(Some("merged.nc"), &bytes).expect("merged file");
+    let humidity = file.variable("humidity").expect("humidity variable");
+
+    assert_eq!(
+        humidity
+            .get_values::<f32, _>((.., ..))
+            .expect("humidity values"),
+        vec![100.0, 200.0, 300.0, 400.0]
+    );
+    assert_eq!(
+        file.attribute("avg_humidity")
+            .expect("avg_humidity")
+            .value()
+            .expect("avg_humidity value"),
+        netcdf::AttributeValue::Str("72%".into())
+    );
+}
+
+#[rocket::async_test]
+async fn repeated_read_uses_cached_merged_dataset() {
+    let client = build_client().await;
+
+    let part_a = client
+        .post("/part_a?name=cache-hit")
+        .header(ContentType::new("application", "netcdf"))
+        .body(create_part_bytes(
+            "part-a",
+            "max_temp",
+            "310K",
+            "temperature",
+            &[1.0, 2.0, 3.0, 4.0],
+        ))
+        .dispatch()
+        .await;
+    assert_eq!(part_a.status(), Status::Ok);
+
+    let part_b = client
+        .post("/part_b?name=cache-hit")
+        .header(ContentType::new("application", "netcdf"))
+        .body(create_part_bytes(
+            "part-b",
+            "avg_humidity",
+            "65%",
+            "humidity",
+            &[10.0, 20.0, 30.0, 40.0],
+        ))
+        .dispatch()
+        .await;
+    assert_eq!(part_b.status(), Status::Ok);
+
+    let first_bytes = client
+        .get("/read?name=cache-hit")
+        .dispatch()
+        .await
+        .into_bytes()
+        .await
+        .expect("first read bytes");
+    let second_bytes = client
+        .get("/read?name=cache-hit")
+        .dispatch()
+        .await
+        .into_bytes()
+        .await
+        .expect("second read bytes");
+
+    assert_eq!(first_bytes, second_bytes);
 }

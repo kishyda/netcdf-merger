@@ -3,6 +3,15 @@ from __future__ import annotations
 from netCDF4 import Dataset
 
 
+def create_netcdf_bytes_for_endpoint(endpoint: str, dataset_name: str) -> bytes:
+    if endpoint == "part_a":
+        return create_part_a_netcdf_bytes(dataset_name)
+    if endpoint == "part_b":
+        return create_part_b_netcdf_bytes(dataset_name)
+
+    raise ValueError(f"unsupported endpoint: {endpoint!r}")
+
+
 def create_part_a_netcdf_bytes(dataset_name: str) -> bytes:
     dataset = Dataset("client.nc", mode="w", diskless=True, memory=1024 * 1024)
     dataset.createDimension("lat", 2)

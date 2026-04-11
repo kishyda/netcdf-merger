@@ -1,4 +1,5 @@
 use crate::helpers;
+use std::collections::HashSet;
 use netcdf::types::{FloatType, IntType, NcVariableType};
 use netcdf::{File, Variable};
 
@@ -14,9 +15,10 @@ pub fn combine_netcdf_bytes(parts: &[&[u8]]) -> helpers::ApiResult<Vec<u8>> {
 
     output.enddef()?;
 
+    let mut copied_variable_names = HashSet::new();
     for part in parts {
         let input = netcdf::open_mem(None, part)?;
-        copy_variable_data(&input, &mut output)?;
+        copy_variable_data(&input, &mut output, &mut copied_variable_names)?;
     }
 
     Ok(output.close_to_bytes()?)
@@ -83,15 +85,24 @@ fn define_variables(input: &File, output: &mut netcdf::FileMut) -> helpers::ApiR
     Ok(())
 }
 
-fn copy_variable_data(input: &File, output: &mut netcdf::FileMut) -> helpers::ApiResult<()> {
+fn copy_variable_data(
+    input: &File,
+    output: &mut netcdf::FileMut,
+    copied_variable_names: &mut HashSet<String>,
+) -> helpers::ApiResult<()> {
     for variable in input.variables() {
         let name = variable.name();
+        if copied_variable_names.contains(&name) {
+            continue;
+        }
+
         let Some(mut output_variable) = output.variable_mut(&name) else {
             continue;
         };
 
         let variable_type = variable.vartype();
         copy_variable_values(&variable, &mut output_variable, &variable_type)?;
+        copied_variable_names.insert(name);
     }
 
     Ok(())

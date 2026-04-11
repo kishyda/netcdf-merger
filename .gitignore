@@ -1,2 +1,5 @@
 /target
 .pycache
+
+client/stress-artifacts
+__pycache__/

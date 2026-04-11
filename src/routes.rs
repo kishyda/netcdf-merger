@@ -5,7 +5,7 @@ use rocket::http::ContentType;
 use rocket::http::Status;
 
 use crate::helpers;
-use crate::state::AppState;
+use crate::state::{AppState, DataSet};
 
 #[post("/part_a?<name>", format = "application/netcdf", data = "<data>")]
 pub async fn part_a(
@@ -18,11 +18,17 @@ pub async fn part_a(
     let stream = data.open(1.gigabytes());
     let bytes = stream.into_bytes().await?.into_inner();
 
-    state
-        .part_a_files
-        .lock()
-        .await
-        .insert(name.to_string(), bytes);
+    netcdf::open_mem(None, &bytes).map_err(|err| {
+        helpers::ApiError::bad_request(format!("Body contains invalid netcdf data: {err}"))
+    })?;
+
+    let mut dataset = state
+        .data
+        .entry(name.to_string())
+        .or_insert_with(DataSet::default);
+    dataset.part_a_data = Some(bytes);
+    dataset.merged_data = None;
+    dataset.version = dataset.version.saturating_add(1);
 
     Ok((Status::Ok, "Success"))
 }
@@ -38,11 +44,17 @@ pub async fn part_b(
     let stream = data.open(1.gigabytes());
     let bytes = stream.into_bytes().await?.into_inner();
 
-    state
-        .part_b_files
-        .lock()
-        .await
-        .insert(name.to_string(), bytes);
+    netcdf::open_mem(None, &bytes).map_err(|err| {
+        helpers::ApiError::bad_request(format!("Body contains invalid netcdf data: {err}"))
+    })?;
+
+    let mut dataset = state
+        .data
+        .entry(name.to_string())
+        .or_insert_with(DataSet::default);
+    dataset.part_b_data = Some(bytes);
+    dataset.merged_data = None;
+    dataset.version = dataset.version.saturating_add(1);
 
     Ok((Status::Ok, "Success"))
 }
@@ -54,31 +66,59 @@ pub async fn read_file(
 ) -> helpers::ApiResult<(ContentType, Vec<u8>)> {
     validate_dataset_name(name)?;
 
-    let part_a = state.part_a_files.lock().await.get(name).cloned();
-    let part_b = state.part_b_files.lock().await.get(name).cloned();
-
-    let bytes = match (part_a.as_deref(), part_b.as_deref()) {
-        (Some(part_a), Some(part_b)) => {
-            crate::netcdf_operations::combine_netcdf_bytes(&[part_a, part_b])?
-        }
-        (None, None) => {
+    loop {
+        let Some(dataset) = state.data.get(name).map(|entry| entry.clone()) else {
             return Err(helpers::ApiError::not_found(format!(
                 "no uploaded datasets found for name={name:?}"
             )));
-        }
-        (None, Some(_)) => {
-            return Err(helpers::ApiError::conflict(format!(
-                "cannot read merged dataset for name={name:?}: missing part_a upload"
-            )));
-        }
-        (Some(_), None) => {
-            return Err(helpers::ApiError::conflict(format!(
-                "cannot read merged dataset for name={name:?}: missing part_b upload"
-            )));
-        }
-    };
+        };
 
-    Ok((ContentType::new("application", "netcdf"), bytes))
+        if let Some(bytes) = dataset.merged_data {
+            return Ok((ContentType::new("application", "netcdf"), bytes));
+        }
+
+        let part_a = dataset.part_a_data;
+        let part_b = dataset.part_b_data;
+        let version = dataset.version;
+
+        let bytes = match (part_a.as_deref(), part_b.as_deref()) {
+            (Some(part_a), Some(part_b)) => {
+                crate::netcdf_operations::combine_netcdf_bytes(&[part_a, part_b])?
+            }
+            (None, None) => {
+                return Err(helpers::ApiError::not_found(format!(
+                    "no uploaded datasets found for name={name:?}"
+                )));
+            }
+            (None, Some(_)) => {
+                return Err(helpers::ApiError::conflict(format!(
+                    "cannot read merged dataset for name={name:?}: missing part_a upload"
+                )));
+            }
+            (Some(_), None) => {
+                return Err(helpers::ApiError::conflict(format!(
+                    "cannot read merged dataset for name={name:?}: missing part_b upload"
+                )));
+            }
+        };
+
+        let Some(mut dataset) = state.data.get_mut(name) else {
+            return Err(helpers::ApiError::not_found(format!(
+                "no uploaded datasets found for name={name:?}"
+            )));
+        };
+
+        if dataset.version != version {
+            continue;
+        }
+
+        if let Some(cached) = dataset.merged_data.clone() {
+            return Ok((ContentType::new("application", "netcdf"), cached));
+        }
+
+        dataset.merged_data = Some(bytes.clone());
+        return Ok((ContentType::new("application", "netcdf"), bytes));
+    }
 }
 
 fn validate_dataset_name(name: &str) -> helpers::ApiResult<()> {
