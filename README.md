@@ -146,18 +146,13 @@ PYTHONPYCACHEPREFIX=../.pycache .venv/bin/python -m unittest discover -s src/tes
 ```
 
 **Current Limitations**
+- Bottlenecked at the merge operation, only one merge at a time possible.
 - Stored datasets and merged cache entries never expire.
 - There is no memory cap or eviction policy.
 - The API returns simple `"Success"` strings for uploads instead of structured JSON.
 - The vendored `netcdf` crate is essential to the design; upgrading dependencies here is not a trivial `cargo update`.
 
 **Parallel Request Handling**
-Correctly supporting parallel requests for NetCDF operations involves several non-obvious challenges:
-- Thread-safety limitations in NetCDF-C and HDF5
-- Internal library file-name collisions for in-memory VFS
-- Asynchronous runtime integration (blocking vs. non-blocking tasks)
-- Preventing redundant computation (thundering herd)
-
 Detailed design considerations for implementing these fixes can be found in [PARALLEL_REQUESTS.md](PARALLEL_REQUESTS.md).
 
 **Most Relevant Files**
