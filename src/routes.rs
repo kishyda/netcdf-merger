@@ -83,6 +83,7 @@ pub async fn read_file(
 
         let bytes = match (part_a.as_deref(), part_b.as_deref()) {
             (Some(part_a), Some(part_b)) => {
+                let _lock = state.netcdf_lock.lock().await;
                 crate::netcdf_operations::combine_netcdf_bytes(&[part_a, part_b])?
             }
             (None, None) => {

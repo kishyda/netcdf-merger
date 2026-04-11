@@ -1,8 +1,10 @@
 use dashmap::DashMap;
+use rocket::futures::lock::Mutex;
 
 #[derive(Default)]
 pub struct AppState {
     pub data: DashMap<String, DataSet>,
+    pub netcdf_lock: Mutex<()>,
 }
 
 #[derive(Default, Clone)]
