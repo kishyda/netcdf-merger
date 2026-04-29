@@ -28,7 +28,7 @@ fn create_part_bytes(
 }
 
 async fn build_client() -> Client {
-    Client::tracked(windborne_oa::build_rocket())
+    Client::tracked(wind_merge::build_rocket())
         .await
         .expect("valid rocket")
 }
@@ -60,7 +60,7 @@ async fn part_a_rejects_invalid_netcdf_body() {
     let response = client
         .post("/part_a?name=invalid")
         .header(ContentType::new("application", "netcdf"))
-        .body(b"not a netcdf file".to_vec())
+        .body(b"not a netcdf file")
         .dispatch()
         .await;
 
@@ -74,7 +74,7 @@ async fn part_b_rejects_invalid_netcdf_body() {
     let response = client
         .post("/part_b?name=invalid")
         .header(ContentType::new("application", "netcdf"))
-        .body(b"not a netcdf file".to_vec())
+        .body(b"not a netcdf file")
         .dispatch()
         .await;
 

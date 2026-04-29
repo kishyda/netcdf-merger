@@ -3,9 +3,10 @@ use rocket::State as RocketState;
 use rocket::data::ToByteUnit;
 use rocket::http::ContentType;
 use rocket::http::Status;
+use rocket::{get, post};
 
 use crate::helpers;
-use crate::state::{AppState, DataSet};
+use crate::state::AppState;
 
 #[post("/part_a?<name>", format = "application/netcdf", data = "<data>")]
 pub async fn part_a(
@@ -25,7 +26,7 @@ pub async fn part_a(
     let mut dataset = state
         .data
         .entry(name.to_string())
-        .or_insert_with(DataSet::default);
+        .or_default();
     dataset.part_a_data = Some(bytes);
     dataset.merged_data = None;
     dataset.version = dataset.version.saturating_add(1);
@@ -51,7 +52,7 @@ pub async fn part_b(
     let mut dataset = state
         .data
         .entry(name.to_string())
-        .or_insert_with(DataSet::default);
+        .or_default();
     dataset.part_b_data = Some(bytes);
     dataset.merged_data = None;
     dataset.version = dataset.version.saturating_add(1);
@@ -83,8 +84,7 @@ pub async fn read_file(
 
         let bytes = match (part_a.as_deref(), part_b.as_deref()) {
             (Some(part_a), Some(part_b)) => {
-                let _lock = state.netcdf_lock.lock().await;
-                crate::netcdf_operations::combine_netcdf_bytes(&[part_a, part_b])?
+                state.process_pool.merge(part_a, part_b).await?
             }
             (None, None) => {
                 return Err(helpers::ApiError::not_found(format!(

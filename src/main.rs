@@ -1,7 +1,21 @@
-use rocket::launch;
+use std::env;
+use wind_merge::server::server;
+use wind_merge::worker::worker;
 
-#[launch]
-fn rocket() -> rocket::Rocket<rocket::Build> {
-    println!("Process started at {}", std::process::id());
-    windborne_oa::build_rocket()
+#[rocket::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mode = env::args().nth(1);
+
+    match mode.as_deref() {
+        None | Some("server") | Some("--server") => server::run_server().await?,
+        Some("worker") | Some("--worker") => worker::run_worker()?,
+        Some(mode) => {
+            return Err(format!(
+                "unknown mode {mode:?}; expected server, worker, or --help"
+            )
+            .into());
+        }
+    }
+
+    Ok(())
 }

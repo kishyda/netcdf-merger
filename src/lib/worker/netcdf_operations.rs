@@ -1,7 +1,9 @@
-use crate::helpers;
 use std::collections::HashSet;
+
 use netcdf::types::{FloatType, IntType, NcVariableType};
 use netcdf::{File, Variable};
+
+use crate::helpers;
 
 pub fn combine_netcdf_bytes(parts: &[&[u8]]) -> helpers::ApiResult<Vec<u8>> {
     let mut output = netcdf::create_mem(1024 * 1024)?;

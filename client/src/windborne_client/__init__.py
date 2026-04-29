@@ -14,7 +14,9 @@ from .stress import (
     create_netcdf_bytes_from_spec,
     create_random_stress_case,
     create_requirement_compliant_merge_bytes,
+    format_stress_profile,
     run_stress_test,
+    stress_profile_recommendations,
     verify_merged_dataset,
 )
 
@@ -34,6 +36,8 @@ __all__ = [
     "create_requirement_compliant_merge_bytes",
     "describe_dataset",
     "dump_dataset",
+    "format_stress_profile",
     "run_stress_test",
+    "stress_profile_recommendations",
     "verify_merged_dataset",
 ]

@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import dataclasses
 import json
 import random
+import sys
+import time
+import tracemalloc
 from pathlib import Path
 from typing import Any
 
+try:
+    import resource
+except ImportError:  # pragma: no cover - resource is not available on every platform
+    resource = None  # type: ignore[assignment]
+
 from netCDF4 import Dataset
 
-from .api import WindborneClient
+from .api import ApiResponse, WindborneClient
 
 
 ScalarValue = str | int | float
@@ -45,10 +54,46 @@ class StressSummary:
     seed: int
     total_cases: int
     passed_cases: int
+    parallelism: int = 1
+    elapsed_seconds: float = 0.0
+    peak_python_memory_bytes: int = 0
+    peak_rss_bytes: int | None = None
 
     @property
     def failed_cases(self) -> int:
         return self.total_cases - self.passed_cases
+
+    @property
+    def total_requests(self) -> int:
+        return self.total_cases * 3
+
+    @property
+    def cases_per_second(self) -> float:
+        if self.elapsed_seconds == 0:
+            return 0.0
+        return self.total_cases / self.elapsed_seconds
+
+    @property
+    def requests_per_second(self) -> float:
+        if self.elapsed_seconds == 0:
+            return 0.0
+        return self.total_requests / self.elapsed_seconds
+
+    @property
+    def average_case_seconds(self) -> float:
+        if self.total_cases == 0:
+            return 0.0
+        return self.elapsed_seconds / self.total_cases
+
+    def estimated_seconds_for_cases(self, cases: int) -> float:
+        return self.average_case_seconds * cases
+
+
+@dataclasses.dataclass(frozen=True)
+class _StressCaseResult:
+    case: StressCase
+    index: int
+    merged_response: ApiResponse
 
 
 def create_random_stress_case(rng: random.Random, name: str) -> StressCase:
@@ -242,71 +287,257 @@ def run_stress_test(
     iterations: int,
     seed: int = 0,
     name_prefix: str = "stress-case",
+    parallelism: int | None = None,
     artifacts_dir: str | Path | None = None,
     save_success_artifacts: bool = False,
     progress: bool = True,
 ) -> StressSummary:
-    rng = random.Random(seed)
-    artifact_root = Path(artifacts_dir) if artifacts_dir is not None else None
+    tracing_was_enabled = tracemalloc.is_tracing()
+    if not tracing_was_enabled:
+        tracemalloc.start()
 
-    for index in range(iterations):
-        case = create_random_stress_case(rng, f"{name_prefix}-{index}")
-        merged_bytes: bytes | None = None
+    if iterations < 0:
+        raise ValueError("iterations must be greater than or equal to 0")
 
-        if progress:
+    try:
+        rng = random.Random(seed)
+        artifact_root = Path(artifacts_dir) if artifacts_dir is not None else None
+        cases = tuple(
+            (index, create_random_stress_case(rng, f"{name_prefix}-{index}"))
+            for index in range(iterations)
+        )
+        worker_count = _stress_worker_count(parallelism, iterations)
+        max_in_flight = worker_count * 2
+        start_time = time.perf_counter()
+
+        if progress and iterations:
             print(
-                f"[{index + 1}/{iterations}] running {case.name} "
-                f"(seed={seed}, part_a_vars={len(case.part_a_spec.variables)}, "
-                f"part_b_vars={len(case.part_b_spec.variables)})"
+                f"Running {iterations} stress cases with {worker_count} parallel case workers "
+                "and parallel part uploads"
             )
+
+        with (
+            concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as case_executor,
+            concurrent.futures.ThreadPoolExecutor(max_workers=worker_count * 2) as upload_executor,
+        ):
+            pending: dict[concurrent.futures.Future[_StressCaseResult], tuple[int, StressCase]] = {}
+            case_iter = iter(cases)
+            _submit_stress_cases(
+                pending=pending,
+                case_iter=case_iter,
+                executor=case_executor,
+                upload_executor=upload_executor,
+                client=client,
+                total_cases=iterations,
+                seed=seed,
+                progress=progress,
+                limit=max_in_flight,
+            )
+
+            while pending:
+                completed, _ = concurrent.futures.wait(
+                    pending,
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                for future in completed:
+                    index, case = pending.pop(future)
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        raise RuntimeError(
+                            f"stress case failed: index={index}, name={case.name!r}, seed={seed}"
+                        ) from exc
+
+                _submit_stress_cases(
+                    pending=pending,
+                    case_iter=case_iter,
+                    executor=case_executor,
+                    upload_executor=upload_executor,
+                    client=client,
+                    total_cases=iterations,
+                    seed=seed,
+                    progress=progress,
+                    limit=max_in_flight,
+                )
+
+        elapsed_seconds = time.perf_counter() - start_time
+        _, peak_python_memory_bytes = tracemalloc.get_traced_memory()
+        return StressSummary(
+            seed=seed,
+            total_cases=iterations,
+            passed_cases=iterations,
+            parallelism=worker_count,
+            elapsed_seconds=elapsed_seconds,
+            peak_python_memory_bytes=peak_python_memory_bytes,
+            peak_rss_bytes=_peak_rss_bytes(),
+        )
+    finally:
+        if not tracing_was_enabled:
+            tracemalloc.stop()
+
+
+def _submit_stress_cases(
+    *,
+    pending: dict[concurrent.futures.Future[_StressCaseResult], tuple[int, StressCase]],
+    case_iter: Any,
+    executor: concurrent.futures.Executor,
+    upload_executor: concurrent.futures.Executor,
+    client: WindborneClient,
+    total_cases: int,
+    seed: int,
+    progress: bool,
+    limit: int,
+) -> None:
+    while len(pending) < limit:
         try:
-            client.upload(
-                "part_a",
-                name=case.name,
-                dataset_name=f"{case.name}-part-a",
-                netcdf_bytes=case.part_a_bytes,
-            )
-            client.upload(
-                "part_b",
-                name=case.name,
-                dataset_name=f"{case.name}-part-b",
-                netcdf_bytes=case.part_b_bytes,
-            )
+            index, case = next(case_iter)
+        except StopIteration:
+            return
 
-            merged_response = client.read_response(case.name)
-            merged_bytes = merged_response.body
-            merged_dataset = WindborneClient._dataset_from_response(merged_response)
-            try:
-                verify_merged_dataset(merged_dataset, case.part_a_spec, case.part_b_spec)
-            finally:
-                merged_dataset.close()
-            if artifact_root is not None and save_success_artifacts:
-                save_case_artifacts(
-                    artifact_root,
-                    case=case,
-                    index=index,
-                    seed=seed,
-                    merged_bytes=merged_bytes,
-                    status="passed",
-                )
-            if progress:
-                print(f"  passed {case.name}")
-        except Exception as exc:
-            if artifact_root is not None:
-                save_case_artifacts(
-                    artifact_root,
-                    case=case,
-                    index=index,
-                    seed=seed,
-                    merged_bytes=merged_bytes,
-                    status="failed",
-                    error_message=str(exc),
-                )
-            raise RuntimeError(
-                f"stress case failed: index={index}, name={case.name!r}, seed={seed}"
-            ) from exc
+        future = executor.submit(
+            _request_stress_case,
+            client=client,
+            case=case,
+            index=index,
+            total_cases=total_cases,
+            seed=seed,
+            progress=progress,
+            upload_executor=upload_executor,
+        )
+        pending[future] = (index, case)
 
-    return StressSummary(seed=seed, total_cases=iterations, passed_cases=iterations)
+
+def _request_stress_case(
+    *,
+    client: WindborneClient,
+    case: StressCase,
+    index: int,
+    total_cases: int,
+    seed: int,
+    progress: bool,
+    upload_executor: concurrent.futures.Executor,
+) -> _StressCaseResult:
+    if progress:
+        print(
+            f"[{index + 1}/{total_cases}] running {case.name} "
+            f"(seed={seed}, part_a_vars={len(case.part_a_spec.variables)}, "
+            f"part_b_vars={len(case.part_b_spec.variables)})"
+        )
+
+    _upload_stress_case_parts(client, case, upload_executor)
+    return _StressCaseResult(
+        case=case,
+        index=index,
+        merged_response=client.read_response(case.name),
+    )
+
+
+def _verify_stress_case_result(
+    result: _StressCaseResult,
+    *,
+    artifact_root: Path | None,
+    seed: int,
+    save_success_artifacts: bool,
+    progress: bool,
+) -> None:
+    merged_dataset = WindborneClient._dataset_from_response(result.merged_response)
+    try:
+        verify_merged_dataset(
+            merged_dataset,
+            result.case.part_a_spec,
+            result.case.part_b_spec,
+        )
+    finally:
+        merged_dataset.close()
+
+    if artifact_root is not None and save_success_artifacts:
+        save_case_artifacts(
+            artifact_root,
+            case=result.case,
+            index=result.index,
+            seed=seed,
+            merged_bytes=result.merged_response.body,
+            status="passed",
+        )
+    if progress:
+        print(f"  passed {result.case.name}")
+
+
+def _upload_stress_case_parts(
+    client: WindborneClient,
+    case: StressCase,
+    executor: concurrent.futures.Executor,
+) -> None:
+    uploads = (
+        executor.submit(
+            client.upload,
+            "part_a",
+            name=case.name,
+            dataset_name=f"{case.name}-part-a",
+            netcdf_bytes=case.part_a_bytes,
+        ),
+        executor.submit(
+            client.upload,
+            "part_b",
+            name=case.name,
+            dataset_name=f"{case.name}-part-b",
+            netcdf_bytes=case.part_b_bytes,
+        ),
+    )
+    for upload in concurrent.futures.as_completed(uploads):
+        upload.result()
+
+
+def _stress_worker_count(parallelism: int | None, iterations: int) -> int:
+    if parallelism is None:
+        return min(32, max(1, iterations))
+    if parallelism < 1:
+        raise ValueError("parallelism must be greater than or equal to 1")
+    return parallelism
+
+
+def _peak_rss_bytes() -> int | None:
+    if resource is None:
+        return None
+
+    peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if sys.platform == "darwin":
+        return peak_rss
+    return peak_rss * 1024
+
+
+def _format_bytes(byte_count: int | None) -> str:
+    if byte_count is None:
+        return "unavailable"
+
+    value = float(byte_count)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            return f"{value:.1f} {unit}"
+        value /= 1024
+
+    return f"{value:.1f} GiB"
+
+
+def format_stress_profile(summary: StressSummary) -> str:
+    return (
+        f"elapsed={summary.elapsed_seconds:.3f}s, "
+        f"throughput={summary.cases_per_second:.2f} cases/s "
+        f"({summary.requests_per_second:.2f} requests/s), "
+        f"avg_case={summary.average_case_seconds:.3f}s, "
+        f"parallelism={summary.parallelism}, "
+        f"peak_python_memory={_format_bytes(summary.peak_python_memory_bytes)}, "
+        f"peak_rss={_format_bytes(summary.peak_rss_bytes)}"
+    )
+
+
+def stress_profile_recommendations() -> tuple[str, ...]:
+    return (
+        "Run the same seed at several --parallelism values to find the saturation point.",
+        "Track server-side CPU, memory, and request latency percentiles alongside this client profile.",
+        "Compare a short warm-up run against longer runs so startup/cache effects do not dominate.",
+        "Record failure rate and response-size distribution when scaling iterations.",
+    )
 
 
 def build_stress_arg_parser() -> argparse.ArgumentParser:
@@ -315,6 +546,7 @@ def build_stress_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--iterations", type=int, default=100)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--name-prefix", default="stress-case")
+    parser.add_argument("--parallelism", type=int)
     parser.add_argument("--artifacts-dir", default="stress-artifacts")
     parser.add_argument("--save-success-artifacts", action="store_true")
     parser.add_argument("--quiet", action="store_true")
@@ -331,6 +563,7 @@ def main(argv: list[str] | None = None) -> None:
         iterations=args.iterations,
         seed=args.seed,
         name_prefix=args.name_prefix,
+        parallelism=args.parallelism,
         artifacts_dir=args.artifacts_dir,
         save_success_artifacts=args.save_success_artifacts,
         progress=not args.quiet,
@@ -339,6 +572,10 @@ def main(argv: list[str] | None = None) -> None:
         f"Stress test passed: {summary.passed_cases}/{summary.total_cases} cases "
         f"(seed={summary.seed}, base_url={args.base_url})"
     )
+    print(f"Profile: {format_stress_profile(summary)}")
+    print("Useful next measurements:")
+    for recommendation in stress_profile_recommendations():
+        print(f"- {recommendation}")
 
 
 def _random_dimensions(rng: random.Random) -> dict[str, int]:

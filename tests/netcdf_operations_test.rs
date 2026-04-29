@@ -107,7 +107,7 @@ fn combine_netcdf_bytes_produces_the_expected_merged_dataset() {
         &[0.5, 0.6, 0.7, 0.8],
     );
 
-    let combined = windborne_oa::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
+    let combined = wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
         .expect("combine");
     let file = netcdf::open_mem(None, &combined).expect("open combined");
 
@@ -182,7 +182,7 @@ fn combine_netcdf_bytes_merges_global_attributes_and_variables() {
         &[0.5, 0.6, 0.7, 0.8],
     );
 
-    let combined = windborne_oa::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
+    let combined = wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
         .expect("combine");
     let file = netcdf::open_mem(None, &combined).expect("open combined");
 
@@ -221,7 +221,7 @@ fn combine_netcdf_bytes_keeps_first_variable_on_name_collision() {
         &[10.0, 20.0, 30.0, 40.0],
     );
 
-    let combined = windborne_oa::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
+    let combined = wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
         .expect("combine");
     let file = netcdf::open_mem(None, &combined).expect("open combined");
     let variable = file.variable("temperature").expect("temperature");
@@ -244,7 +244,7 @@ fn combine_netcdf_bytes_preserves_integer_variables_and_unlimited_dimensions() {
     );
 
     let combined =
-        windborne_oa::netcdf_operations::combine_netcdf_bytes(&[&integer_part, &weather_part])
+        wind_merge::netcdf_operations::combine_netcdf_bytes(&[&integer_part, &weather_part])
             .expect("combine");
     let file = netcdf::open_mem(None, &combined).expect("open combined");
     let time = file.dimension("time").expect("time dimension");
@@ -285,7 +285,7 @@ fn combine_netcdf_bytes_ignores_later_duplicate_variable_data_even_when_shape_di
     let part_b =
         create_single_dimension_part_bytes("other_temp", "999K", "temperature", &[10.0, 20.0]);
 
-    let combined = windborne_oa::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
+    let combined = wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
         .expect("combine should keep one duplicate variable without crashing");
     let file = netcdf::open_mem(None, &combined).expect("open combined");
     let variable = file.variable("temperature").expect("temperature");
@@ -311,7 +311,7 @@ fn combine_netcdf_bytes_preserves_extended_numeric_global_attributes() {
         &[10.0, 20.0, 30.0, 40.0],
     );
 
-    let combined = windborne_oa::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
+    let combined = wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
         .expect("combine");
     let file = netcdf::open_mem(None, &combined).expect("open combined");
 

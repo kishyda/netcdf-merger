@@ -115,11 +115,19 @@ uv run python -m src.windborne_client --stress --iterations 100 --artifacts-dir 
 
 Useful flags:
 - `--iterations`
+- `--parallelism`
 - `--seed`
 - `--name-prefix`
 - `--artifacts-dir`
 - `--save-success-artifacts`
 - `--quiet`
+
+The stress harness prints a profile summary after a successful run:
+- elapsed wall-clock time
+- throughput in cases/second and requests/second
+- average seconds per case for rough extrapolation
+- peak Python-traced memory
+- peak process RSS when available on the platform
 
 **Stress Artifacts**
 - The stress harness writes one directory per case under the artifact root.

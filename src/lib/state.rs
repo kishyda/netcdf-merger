@@ -1,10 +1,12 @@
 use dashmap::DashMap;
 use rocket::futures::lock::Mutex;
+use crate::worker::pool::WorkerPool;
 
 #[derive(Default)]
 pub struct AppState {
     pub data: DashMap<String, DataSet>,
     pub netcdf_lock: Mutex<()>,
+    pub process_pool: WorkerPool,
 }
 
 #[derive(Default, Clone)]

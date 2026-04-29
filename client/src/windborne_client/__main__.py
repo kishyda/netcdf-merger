@@ -7,7 +7,7 @@ from netCDF4 import Dataset
 from .api import WindborneClient
 from .display import describe_dataset, dump_dataset
 from .samples import create_expected_output_netcdf_bytes
-from .stress import run_stress_test
+from .stress import format_stress_profile, run_stress_test, stress_profile_recommendations
 
 
 def run_demo(base_url: str) -> None:
@@ -43,9 +43,10 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Windborne NetCDF client tools")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--stress", action="store_true")
-    parser.add_argument("--iterations", type=int, default=100)
+    parser.add_argument("--iterations", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--name-prefix", default="stress-case")
+    parser.add_argument("--parallelism", type=int)
     parser.add_argument("--artifacts-dir", default="stress-artifacts")
     parser.add_argument("--save-success-artifacts", action="store_true")
     parser.add_argument("--quiet", action="store_true")
@@ -57,6 +58,7 @@ def main(argv: list[str] | None = None) -> None:
             iterations=args.iterations,
             seed=args.seed,
             name_prefix=args.name_prefix,
+            parallelism=args.parallelism,
             artifacts_dir=args.artifacts_dir,
             save_success_artifacts=args.save_success_artifacts,
             progress=not args.quiet,
@@ -65,6 +67,10 @@ def main(argv: list[str] | None = None) -> None:
             f"Stress test passed: {summary.passed_cases}/{summary.total_cases} cases "
             f"(seed={summary.seed})"
         )
+        print(f"Profile: {format_stress_profile(summary)}")
+        print("Useful next measurements:")
+        for recommendation in stress_profile_recommendations():
+            print(f"- {recommendation}")
         return
 
     run_demo(args.base_url)

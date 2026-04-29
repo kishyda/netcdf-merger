@@ -4,10 +4,10 @@ use rocket::http::Status;
 
 #[test]
 fn api_error_constructors_preserve_status_and_message() {
-    let bad_request = windborne_oa::helpers::ApiError::bad_request("bad");
-    let not_found = windborne_oa::helpers::ApiError::not_found("missing");
-    let conflict = windborne_oa::helpers::ApiError::conflict("conflict");
-    let explicit = windborne_oa::helpers::ApiError::new(Status::ImATeapot, "teapot");
+    let bad_request = wind_merge::helpers::ApiError::bad_request("bad");
+    let not_found = wind_merge::helpers::ApiError::not_found("missing");
+    let conflict = wind_merge::helpers::ApiError::conflict("conflict");
+    let explicit = wind_merge::helpers::ApiError::new(Status::ImATeapot, "teapot");
 
     assert_eq!(bad_request.status, Status::BadRequest);
     assert_eq!(bad_request.message, "bad");
@@ -21,8 +21,8 @@ fn api_error_constructors_preserve_status_and_message() {
 
 #[test]
 fn api_error_internal_and_from_error_convert_to_internal_server_error() {
-    let internal = windborne_oa::helpers::ApiError::internal("boom");
-    let converted: windborne_oa::helpers::ApiError = io::Error::other("io failure").into();
+    let internal = wind_merge::helpers::ApiError::internal("boom");
+    let converted: wind_merge::helpers::ApiError = io::Error::other("io failure").into();
 
     assert_eq!(internal.status, Status::InternalServerError);
     assert_eq!(internal.message, "boom");
