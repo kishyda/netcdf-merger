@@ -67,6 +67,6 @@ impl WorkerPool {
 
 impl Default for WorkerPool {
     fn default() -> Self {
-        Self::new(8).unwrap()
+        Self::new(16).unwrap()
     }
 }

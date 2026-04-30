@@ -1,4 +1,5 @@
 pub mod helpers;
+pub mod load_client;
 pub mod server;
 pub mod state;
 pub mod worker;
