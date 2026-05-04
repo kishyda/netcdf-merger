@@ -1,5 +1,5 @@
 use std::env;
-use wind_merge::load_client::{self, LoadClientConfig};
+use wind_merge::client::{self, load_client::LoadClientConfig};
 use wind_merge::server::server;
 use wind_merge::worker::worker;
 
@@ -30,7 +30,7 @@ fn run_load_client(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> 
     }
 
     let config = parse_load_client_args(args)?;
-    let summary = load_client::run(config)?;
+    let summary = client::load_client::run(config)?;
     println!(
         "Rust load client complete: cases={}, parallelism={}, elapsed={:.3}s, throughput={:.2} cases/s ({:.2} requests/s)",
         summary.iterations,
