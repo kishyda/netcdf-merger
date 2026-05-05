@@ -1,6 +1,6 @@
+use crate::worker::pool::WorkerPool;
 use dashmap::DashMap;
 use rocket::futures::lock::Mutex;
-use crate::worker::pool::WorkerPool;
 
 #[derive(Default)]
 pub struct AppState {

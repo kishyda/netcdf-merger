@@ -71,10 +71,7 @@ fn worker_executable() -> io::Result<PathBuf> {
         return Ok(debug_dir.join(format!("wind-merge{}", std::env::consts::EXE_SUFFIX)));
     }
 
-    Ok(current_exe.with_file_name(format!(
-        "wind-merge{}",
-        std::env::consts::EXE_SUFFIX
-    )))
+    Ok(current_exe.with_file_name(format!("wind-merge{}", std::env::consts::EXE_SUFFIX)))
 }
 
 async fn read_u64<R>(reader: &mut R) -> io::Result<u64>

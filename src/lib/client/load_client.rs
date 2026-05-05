@@ -182,7 +182,9 @@ fn create_part_bytes(
         let mut variable = dataset
             .variable_mut(&variable_name)
             .ok_or_else(|| io::Error::other("created variable was not found"))?;
-        variable.put_values(&values, (.., ..)).map_err(to_io_error)?;
+        variable
+            .put_values(&values, (.., ..))
+            .map_err(to_io_error)?;
     }
 
     dataset.close_to_bytes().map_err(to_io_error)

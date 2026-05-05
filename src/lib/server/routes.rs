@@ -23,10 +23,7 @@ pub async fn part_a(
         helpers::ApiError::bad_request(format!("Body contains invalid netcdf data: {err}"))
     })?;
 
-    let mut dataset = state
-        .data
-        .entry(name.to_string())
-        .or_default();
+    let mut dataset = state.data.entry(name.to_string()).or_default();
     dataset.part_a_data = Some(bytes);
     dataset.merged_data = None;
     dataset.version = dataset.version.saturating_add(1);
@@ -49,10 +46,7 @@ pub async fn part_b(
         helpers::ApiError::bad_request(format!("Body contains invalid netcdf data: {err}"))
     })?;
 
-    let mut dataset = state
-        .data
-        .entry(name.to_string())
-        .or_default();
+    let mut dataset = state.data.entry(name.to_string()).or_default();
     dataset.part_b_data = Some(bytes);
     dataset.merged_data = None;
     dataset.version = dataset.version.saturating_add(1);
@@ -83,9 +77,7 @@ pub async fn read_file(
         let version = dataset.version;
 
         let bytes = match (part_a.as_deref(), part_b.as_deref()) {
-            (Some(part_a), Some(part_b)) => {
-                state.process_pool.merge(part_a, part_b).await?
-            }
+            (Some(part_a), Some(part_b)) => state.process_pool.merge(part_a, part_b).await?,
             (None, None) => {
                 return Err(helpers::ApiError::not_found(format!(
                     "no uploaded datasets found for name={name:?}"

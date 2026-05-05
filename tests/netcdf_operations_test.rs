@@ -42,7 +42,9 @@ fn create_integer_part_bytes() -> Vec<u8> {
     }
     dataset.enddef().expect("enddef");
     let mut variable = dataset.variable_mut("pressure").expect("pressure");
-    variable.put_values(&[1001_i32, 1002, 1003], ..).expect("values");
+    variable
+        .put_values(&[1001_i32, 1002, 1003], ..)
+        .expect("values");
     dataset.close_to_bytes().expect("bytes")
 }
 
@@ -86,7 +88,9 @@ fn create_extended_attribute_part_bytes() -> Vec<u8> {
     }
     dataset.enddef().expect("enddef");
     let mut variable = dataset.variable_mut("temperature").expect("temperature");
-    variable.put_values(&[1.5_f32, 2.5_f32], ..).expect("values");
+    variable
+        .put_values(&[1.5_f32, 2.5_f32], ..)
+        .expect("values");
     dataset.close_to_bytes().expect("bytes")
 }
 
@@ -107,8 +111,8 @@ fn combine_netcdf_bytes_produces_the_expected_merged_dataset() {
         &[0.5, 0.6, 0.7, 0.8],
     );
 
-    let combined = wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
-        .expect("combine");
+    let combined =
+        wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b]).expect("combine");
     let file = netcdf::open_mem(None, &combined).expect("open combined");
 
     let temperature = file.variable("temperature").expect("temperature variable");
@@ -182,8 +186,8 @@ fn combine_netcdf_bytes_merges_global_attributes_and_variables() {
         &[0.5, 0.6, 0.7, 0.8],
     );
 
-    let combined = wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
-        .expect("combine");
+    let combined =
+        wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b]).expect("combine");
     let file = netcdf::open_mem(None, &combined).expect("open combined");
 
     assert!(file.variable("temperature").is_some());
@@ -221,8 +225,8 @@ fn combine_netcdf_bytes_keeps_first_variable_on_name_collision() {
         &[10.0, 20.0, 30.0, 40.0],
     );
 
-    let combined = wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
-        .expect("combine");
+    let combined =
+        wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b]).expect("combine");
     let file = netcdf::open_mem(None, &combined).expect("open combined");
     let variable = file.variable("temperature").expect("temperature");
     let values = variable.get_values::<f32, _>((.., ..)).expect("values");
@@ -311,8 +315,8 @@ fn combine_netcdf_bytes_preserves_extended_numeric_global_attributes() {
         &[10.0, 20.0, 30.0, 40.0],
     );
 
-    let combined = wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b])
-        .expect("combine");
+    let combined =
+        wind_merge::netcdf_operations::combine_netcdf_bytes(&[&part_a, &part_b]).expect("combine");
     let file = netcdf::open_mem(None, &combined).expect("open combined");
 
     assert_eq!(

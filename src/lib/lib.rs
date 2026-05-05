@@ -1,5 +1,6 @@
-pub mod helpers;
+pub mod cli;
 pub mod client;
+pub mod helpers;
 pub mod server;
 pub mod state;
 pub mod worker;
